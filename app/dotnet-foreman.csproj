@@ -6,4 +6,9 @@
     <RootNamespace>dotnet_foreman</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NDesk.Options" Version="0.2.1" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="4.5.1" />
+  </ItemGroup>
+
 </Project>

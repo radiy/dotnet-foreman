@@ -1,9 +1,11 @@
-﻿using System;
+﻿using NDesk.Options;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace dotnet_foreman
@@ -32,18 +34,38 @@ namespace dotnet_foreman
         [DllImport("kernel32.dll")]
         static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
 
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        public static extern int GetSystemDefaultLCID();
+
         delegate Boolean ConsoleCtrlDelegate(CtrlTypes type);
 
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
             try {
-                if (!File.Exists("Procfile")) {
-                    Console.WriteLine("Procfile not found");
-                    return;
+                int lcid = GetSystemDefaultLCID();
+                var ci = System.Globalization.CultureInfo.GetCultureInfo(lcid);
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+                var procfile = "Procfile";
+                var help = false;
+                var wsl = false;
+                var options = new OptionSet {
+                    {"f|procfile=", "Procfile", v => procfile = v},
+                    {"h|help", v => help = v != null},
+                    {"wsl", v => wsl = v != null},
+                 };
+                options.Parse(args);
+                if (help) {
+                    options.WriteOptionDescriptions(Console.Out);
+                    return 0;
                 }
-                var lines = File.ReadAllLines("Procfile");
+
+                if (!File.Exists(procfile)) {
+                    Console.WriteLine($"{procfile} not found");
+                    return 1;
+                }
                 var commands = new Dictionary<string, string>();
-                foreach(var line in lines) { 
+                foreach(var line in File.ReadLines(procfile)) {
                     var currentline = line.Trim();
                     if (currentline.StartsWith('#'))
                         continue;
@@ -52,16 +74,22 @@ namespace dotnet_foreman
                         continue;
                     if (index == currentline.Length - 1)
                         continue;
-                    commands.Add(currentline.Substring(0, index), currentline.Substring(index + 1));
+                    commands.Add(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim());
                 }
                 var processes = new List<Process>();
                 foreach(var command in commands.Keys)
                 {
-                    var info = new ProcessStartInfo("cmd.exe", $"/c \"{commands[command]}\"");
+                    string cmd = commands[command];
+                    Console.WriteLine(cmd);
+                    var info = new ProcessStartInfo("cmd", $"/c \"{cmd}\"");
+                    if (wsl)
+                        info = new ProcessStartInfo("wsl", $"bash --login -c '{cmd}'");
                     info.UseShellExecute = false;
                     info.CreateNoWindow = true;
                     info.RedirectStandardError = true;
                     info.RedirectStandardOutput = true;
+                    info.StandardOutputEncoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
+                    info.StandardErrorEncoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
                     var process = Process.Start(info);
                     process.OutputDataReceived += (s, a) => {
                         if (a.Data != null)
@@ -91,10 +119,12 @@ namespace dotnet_foreman
                 };
                 var tasks = processes.Select(x => Task.Run(() => x.WaitForExit())).ToArray();
                 Task.WaitAll(tasks);
+                return 0;
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
+                return 1;
             }
         }
     }
