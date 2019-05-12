@@ -39,6 +39,20 @@ namespace dotnet_foreman
 
         delegate Boolean ConsoleCtrlDelegate(CtrlTypes type);
 
+        public class ForemanProcess
+        {
+            public string Command;
+            public string Name;
+            public ConsoleColor Color;
+            public Process Process;
+
+            public ForemanProcess(string name, string command)
+            {
+                this.Name = name;
+                this.Command = command;
+            }
+        }
+
         static int Main(string[] args)
         {
             try {
@@ -64,7 +78,7 @@ namespace dotnet_foreman
                     Console.WriteLine($"{procfile} not found");
                     return 1;
                 }
-                var commands = new Dictionary<string, string>();
+                var commands = new List<ForemanProcess>();
                 foreach(var line in File.ReadLines(procfile)) {
                     var currentline = line.Trim();
                     if (currentline.StartsWith('#'))
@@ -74,41 +88,64 @@ namespace dotnet_foreman
                         continue;
                     if (index == currentline.Length - 1)
                         continue;
-                    commands.Add(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim());
+                    commands.Add(new ForemanProcess(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim()));
                 }
-                var processes = new List<Process>();
-                foreach(var command in commands.Keys)
+                for (var i = 0; i < commands.Count; i++)
                 {
-                    string cmd = commands[command];
-                    Console.WriteLine(cmd);
-                    var info = new ProcessStartInfo("cmd", $"/c \"{cmd}\"");
+                    commands[i].Color = (ConsoleColor)i + 1;
+                }
+
+                foreach(var command in commands)
+                {
+                    var info = new ProcessStartInfo("cmd", $"/c \"{command.Command}\"");
                     if (wsl)
-                        info = new ProcessStartInfo("wsl", $"bash --login -c '{cmd}'");
+                        info = new ProcessStartInfo("wsl", $"bash --login -c '{command.Command}'");
                     info.UseShellExecute = false;
                     info.CreateNoWindow = true;
                     info.RedirectStandardError = true;
                     info.RedirectStandardOutput = true;
-                    info.StandardOutputEncoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
-                    info.StandardErrorEncoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
+                    var encoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
+                    if (command.Command.IndexOf("iisexpress") >= 0)
+                    {
+                        encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
+                        encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
+                    }
+                    else if (wsl)
+                    {
+                        encoding = Encoding.UTF8;
+                    }
+                    else
+                    {
+                        encoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
+                    }
+                    info.StandardOutputEncoding = encoding;
+                    info.StandardErrorEncoding = encoding;
                     var process = Process.Start(info);
-                    process.OutputDataReceived += (s, a) => {
-                        if (a.Data != null)
-                            Console.WriteLine(a.Data);
+                    process.OutputDataReceived += (s, a) =>
+                    {
+                        if (a.Data == null)
+                            return;
+
+                        WriteLogo(command);
+                        Console.WriteLine(a.Data);
                     };
                     process.ErrorDataReceived += (s, a) => {
-                        if (a.Data != null)
-                            Console.WriteLine(a.Data);
+                        if (a.Data == null)
+                            return;
+
+                        WriteLogo(command);
+                        Console.WriteLine(a.Data);
                     };
                     process.BeginErrorReadLine();
                     process.BeginOutputReadLine();
-                    processes.Add(process);
+                    command.Process = process;
                 }
 
                 Console.CancelKeyPress += (s, a) => {
                     a.Cancel = true;
-                    foreach(var process in processes) {
+                    foreach(var commnad in commands) {
                         FreeConsole();
-                        if (AttachConsole((uint)process.Id))
+                        if (AttachConsole((uint)commnad.Process.Id))
                         {
                             // Disable Ctrl-C handling for our program
                             Console.WriteLine(GenerateConsoleCtrlEvent(CtrlTypes.CTRL_C_EVENT, 0));
@@ -117,7 +154,7 @@ namespace dotnet_foreman
                         }
                     }
                 };
-                var tasks = processes.Select(x => Task.Run(() => x.WaitForExit())).ToArray();
+                var tasks = commands.Select(x => Task.Run(() => x.Process.WaitForExit())).ToArray();
                 Task.WaitAll(tasks);
                 return 0;
             }
@@ -125,6 +162,20 @@ namespace dotnet_foreman
             {
                 Console.WriteLine(e);
                 return 1;
+            }
+        }
+
+        private static void WriteLogo(ForemanProcess command)
+        {
+            var color = Console.ForegroundColor;
+            Console.ForegroundColor = command.Color;
+            try
+            {
+                Console.Write(command.Name.PadRight(10) + "|");
+            }
+            finally
+            {
+                Console.ForegroundColor = color;
             }
         }
     }
