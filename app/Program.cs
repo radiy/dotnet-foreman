@@ -147,9 +147,7 @@ namespace dotnet_foreman
                         FreeConsole();
                         if (AttachConsole((uint)commnad.Process.Id))
                         {
-                            // Disable Ctrl-C handling for our program
-                            Console.WriteLine(GenerateConsoleCtrlEvent(CtrlTypes.CTRL_C_EVENT, 0));
-
+                            GenerateConsoleCtrlEvent(CtrlTypes.CTRL_C_EVENT, 0);
                             FreeConsole();
                         }
                     }
