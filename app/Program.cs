@@ -53,6 +53,7 @@ namespace dotnet_foreman
             }
         }
 
+        public static object outputSync = new object();
         static int Main(string[] args)
         {
             try {
@@ -125,16 +126,21 @@ namespace dotnet_foreman
                     {
                         if (a.Data == null)
                             return;
-
-                        WriteLogo(command);
-                        Console.WriteLine(a.Data);
+                        lock (outputSync)
+                        {
+                            WriteLogo(command);
+                            Console.WriteLine(a.Data);
+                        }
                     };
                     process.ErrorDataReceived += (s, a) => {
                         if (a.Data == null)
                             return;
 
-                        WriteLogo(command);
-                        Console.WriteLine(a.Data);
+                        lock (outputSync)
+                        {
+                            WriteLogo(command);
+                            Console.WriteLine(a.Data);
+                        }
                     };
                     process.BeginErrorReadLine();
                     process.BeginOutputReadLine();
