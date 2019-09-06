@@ -45,6 +45,7 @@ namespace dotnet_foreman
             public string Name;
             public ConsoleColor Color;
             public Process Process;
+            public bool Wsl;
 
             public ForemanProcess(string name, string command)
             {
@@ -80,16 +81,35 @@ namespace dotnet_foreman
                     return 1;
                 }
                 var commands = new List<ForemanProcess>();
+                string prevline = null;
                 foreach(var line in File.ReadLines(procfile)) {
                     var currentline = line.Trim();
                     if (currentline.StartsWith('#'))
+                    {
+                        prevline = line;
                         continue;
+                    }
+
                     var index = currentline.IndexOf(':');
                     if (index <= 0)
+                    {
+                        prevline = line;
                         continue;
+                    }
+
                     if (index == currentline.Length - 1)
+                    {
+                        prevline = line;
                         continue;
-                    commands.Add(new ForemanProcess(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim()));
+                    }
+                    var item = new ForemanProcess(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim());
+                    item.Wsl = wsl;
+                    commands.Add(item);
+                    if (prevline == "#wsl")
+                        item.Wsl = true;
+                    if (prevline == "#cmd")
+                        item.Wsl = false;
+                    prevline = line;
                 }
                 for (var i = 0; i < commands.Count; i++)
                 {
@@ -99,10 +119,9 @@ namespace dotnet_foreman
                 foreach(var command in commands)
                 {
                     var info = new ProcessStartInfo("cmd", $"/c \"{command.Command}\"");
-                    if (wsl)
+                    if (command.Wsl)
                         info = new ProcessStartInfo("wsl", $"bash --login -c '{command.Command}'");
                     info.UseShellExecute = false;
-                    info.CreateNoWindow = true;
                     info.RedirectStandardError = true;
                     info.RedirectStandardOutput = true;
                     var encoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
@@ -119,6 +138,7 @@ namespace dotnet_foreman
                     {
                         encoding = Encoding.GetEncoding(ci.TextInfo.OEMCodePage);
                     }
+                    info.CreateNoWindow = true;
                     info.StandardOutputEncoding = encoding;
                     info.StandardErrorEncoding = encoding;
                     var process = Process.Start(info);
