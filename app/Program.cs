@@ -130,7 +130,7 @@ namespace dotnet_foreman
                         encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
                         encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
                     }
-                    else if (wsl)
+                    else if (command.Wsl)
                     {
                         encoding = Encoding.UTF8;
                     }
