@@ -39,13 +39,19 @@ namespace dotnet_foreman
 
         delegate Boolean ConsoleCtrlDelegate(CtrlTypes type);
 
+        public enum ShellType
+        {
+            Cmd,
+            Wsl,
+            Powershell
+        }
         public class ForemanProcess
         {
             public string Command;
             public string Name;
             public ConsoleColor Color;
             public Process Process;
-            public bool Wsl;
+            public ShellType ShellType = ShellType.Cmd;
 
             public ForemanProcess(string name, string command)
             {
@@ -62,13 +68,21 @@ namespace dotnet_foreman
                 var ci = System.Globalization.CultureInfo.GetCultureInfo(lcid);
                 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
+                var shellType = ShellType.Cmd;
                 var procfile = "Procfile";
                 var help = false;
-                var wsl = false;
                 var options = new OptionSet {
                     {"f|procfile=", "Procfile", v => procfile = v},
                     {"h|help", v => help = v != null},
-                    {"wsl", v => wsl = v != null},
+                    {"shell-type=", "Default shell: cmd, wsl, powershell", v => {
+                            TryGetShellType(v, ref shellType);
+                        }
+                    },
+                    {"wsl", v => {
+                        if (v != null)
+                            shellType = ShellType.Wsl;
+                        }
+                    },
                  };
                 options.Parse(args);
                 if (help) {
@@ -103,12 +117,10 @@ namespace dotnet_foreman
                         continue;
                     }
                     var item = new ForemanProcess(currentline.Substring(0, index).Trim(), currentline.Substring(index + 1).Trim());
-                    item.Wsl = wsl;
+                    item.ShellType = shellType;
                     commands.Add(item);
-                    if (prevline == "#wsl")
-                        item.Wsl = true;
-                    if (prevline == "#cmd")
-                        item.Wsl = false;
+                    if (prevline?.StartsWith("#") == true)
+                        TryGetShellType(prevline.TrimStart('#'), ref item.ShellType);
                     prevline = line;
                 }
                 for (var i = 0; i < commands.Count; i++)
@@ -118,9 +130,12 @@ namespace dotnet_foreman
 
                 foreach(var command in commands)
                 {
-                    var info = new ProcessStartInfo("cmd", $"/c \"{command.Command}\"");
-                    if (command.Wsl)
-                        info = new ProcessStartInfo("wsl", $"bash --login -c '{command.Command}'");
+                    var info = command.ShellType switch
+                    {
+                        ShellType.Cmd => new ProcessStartInfo("cmd", $"/c \"{command.Command}\""),
+                        ShellType.Wsl => new ProcessStartInfo("wsl", $"bash --login -c '{command.Command}'"),
+                        ShellType.Powershell => new ProcessStartInfo("powershell", $"{command.Command}"),
+                    };
                     info.UseShellExecute = false;
                     info.RedirectStandardError = true;
                     info.RedirectStandardOutput = true;
@@ -130,7 +145,7 @@ namespace dotnet_foreman
                         encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
                         encoding = Encoding.GetEncoding(ci.TextInfo.ANSICodePage);
                     }
-                    else if (command.Wsl)
+                    else if (command.ShellType == ShellType.Wsl)
                     {
                         encoding = Encoding.UTF8;
                     }
@@ -187,6 +202,26 @@ namespace dotnet_foreman
                 Console.WriteLine(e);
                 return 1;
             }
+        }
+
+        private static bool TryGetShellType(string value, ref ShellType type)
+        {
+            if (value == "wsl")
+            {
+                type = ShellType.Wsl;
+                return true;
+            }
+            if (value == "cmd")
+            {
+                type = ShellType.Cmd;
+                return true;
+            }
+            if (value == "powershell")
+            {
+                type = ShellType.Powershell;
+                return true;
+            }
+            return false;
         }
 
         private static void WriteLogo(ForemanProcess command)
